@@ -1,0 +1,208 @@
+# Driver configuration
+driver:
+  kind: modern_ebpf
+
+# JSON output
+falco:
+  jsonOutput: true
+  grpc:
+    enabled: true
+  grpcOutput:
+    enabled: true
+
+# Falcosidekick configuration
+falcosidekick:
+  enabled: true
+  
+  config:
+    slack:
+      webhookurl: "https://hooks.slack.com/services/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"
+      minimumpriority: "warning"
+      outputformat: "all"
+  
+  webui:
+    enabled: true
+    redis:
+      enabled: true
+      master:
+        persistence:
+          enabled: true
+          size: 8Gi
+
+# CUSTOM RULES - Corregidas para Falco 0.42.0
+customRules:
+  custom-rules.yaml: |-
+    # 1. Detectar shells spawneados en containers
+    - rule: Spawned shell in container
+      desc: Detecta ejecución de shells dentro de contenedores
+      condition: evt.type=execve and container.id != host and proc.name in (sh, bash, ash, zsh)
+      output: "SHELL SPAWNED in container (user=%user.name cmd=%proc.cmdline container=%container.id)"
+      priority: WARNING
+      tags: [custom, container, shell]
+
+    # 2. Alertar escrituras en /etc
+    - rule: Write to Sensitive System Directories
+      desc: Detecta escrituras en directorios críticos (/etc, /bin, /usr/bin) ignorando archivos de cache, logs, runtime y otros conocidos
+      condition: >
+        evt.type in (open, creat, openat, pwrite, write)
+        and evt.is_open_write=true
+        and (
+          fd.name startswith /etc or
+          fd.name startswith /bin or
+          fd.name startswith /usr/bin
+        )
+        and not fd.name in (
+          /etc/ld.so.cache,
+          /etc/machine-id,
+          /etc/hosts,
+          /etc/resolv.conf,
+          /etc/passwd,
+          /etc/group,
+          /etc/shadow
+        )
+        and not fd.name startswith /etc/ssl/certs
+        and not fd.name startswith /etc/service/
+        and not fd.name startswith /etc/sv/
+        and not fd.name startswith /etc/systemd/
+        and not fd.name startswith /var/cache/
+        and not fd.name startswith /var/lib/
+        and not fd.name startswith /usr/bin/.wh
+      output: "ALERTA: Escritura en directorio sensible detectada (user=%user.name pid=%proc.pid file=%fd.name)"
+      priority: WARNING
+      tags: [filesystem, security, sensitive]
+      
+      
+    # 3. Detectar lectura de /etc/shadow
+    - rule: Read Sensitive Files (Filtered)
+      desc: Detecta lecturas de archivos sensibles como /etc/shadow solo por procesos inesperados
+      condition: >
+        evt.type in (open, openat, read)
+        and fd.name in (/etc/shadow, /etc/gshadow)
+        and evt.is_open_read=true
+        and not user.uid in (0, 1, 65534)
+        and not proc.name in (sshd, systemd, login, getent)
+      output: "ALERTA: Lectura sospechosa de archivo sensible detectada (user=%user.name pid=%proc.pid proc=%proc.name file=%fd.name)"
+      priority: CRITICAL
+      tags: [filesystem, security, sensitive]
+          
+      
+    # 4. Alertar Conexion sospechosa
+    - rule: Custom Suspicious Network Connection
+      desc: Mi detección de conexiones de red sospechosas
+      condition: >
+        outbound and
+        container and
+        fd.l4proto=tcp and
+        not fd.sport in (80, 443, 8080, 8443, 53, 3306, 5432, 6379, 9200, 27017) and
+        not proc.name in (curl, wget, apt, apt-get, yum, dnf, npm, pip, gem, go) and
+        not container.name in (calico-node, kube-proxy, coredns) and
+        user.uid > 0
+      output: >
+        [CUSTOM] Outbound connection to non-standard port (user=%user.name 
+        container=%container.name image=%container.image.repository 
+        process=%proc.name cmdline=%proc.cmdline connection=%fd.name 
+        k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name)
+      priority: WARNING
+      tags: [network, mitre_command_and_control, T1071, custom]
+
+    # 5. Detectar escalación de privilegios mediante sudo o su
+    - rule: Privilege escalation
+      desc: Detecta escalación de privilegios mediante uso de sudo o su
+      condition: evt.type=execve and proc.name in (sudo, su)
+      output: "ESCALACION DE PRIVILEGIOS (user=%user.name cmd=%proc.cmdline)"
+      priority: CRITICAL
+      tags: [custom, privilege]
+      output: "ESCALACION DE PRIVILEGIOS (user=%user.name cmd=%proc.cmdline)"
+      priority: CRITICAL
+      tags: [custom, privilege]
+
+    # 6. Alertar cambios en binarios críticos (/usr/sbin, /sbin)
+    - rule: System Binary Modified (Filtered)
+      desc: Detecta cambios en binarios del sistema ignorando actualizaciones legítimas
+      condition: >
+        evt.type in (open, creat, rename, unlink)
+        and (fd.name startswith /bin or
+             fd.name startswith /sbin or
+             fd.name startswith /usr/bin or
+             fd.name startswith /usr/sbin)
+        and not proc.name in (rpm, dpkg, yum, dnf, apt, apt-get, zypper)
+      output: "ALERTA: Cambio sospechoso en binario del sistema (user=%user.name pid=%proc.pid proc=%proc.name file=%fd.name)"
+      priority: CRITICAL
+      tags: [filesystem, integrity, custom]
+  
+  
+      # 7. Detectar Capabilities
+    - rule: Capabilities Sensibles Agregadas
+      desc: Detecta cuando se agregan capabilities sensibles a contenedores
+      condition: spawned_process and container and proc.name in (capsh, setcap, getcap) and not proc.pname in (dockerd, containerd)
+      output: Modificación de capabilities detectada (container=%container.name process=%proc.name command=%proc.cmdline)
+      priority: WARNING
+      tags: [container, capabilities]
+
+    # 8. Alertar Acceso a Secrets
+    - rule: Acceso a Secrets de Kubernetes
+      desc: Detecta cuando un proceso accede a archivos de secrets montados en contenedores
+      condition: open_read and container and fd.name startswith /run/secrets/kubernetes.io and not proc.name in (kubelet, dockerd, containerd)
+      output: Acceso a secret de Kubernetes detectado (container=%container.name image=%container.image.repository process=%proc.name file=%fd.name command=%proc.cmdline)
+      priority: WARNING
+      tags: [container, secrets, kubernetes]
+
+    # 9. Detectar descarga de archivos con wget/curl
+    - rule: Descarga de Archivos en Contenedor
+      desc: Detecta uso de wget o curl para descargar archivos
+      condition: evt.type=execve and container and proc.name in (wget, curl)
+      output: "DESCARGA DETECTADA (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, network, download]
+    
+    # 10. Detectar creación de usuarios
+    - rule: Creacion de Usuario en Contenedor
+      desc: Detecta intentos de crear nuevos usuarios
+      condition: evt.type=execve and container and proc.name in (useradd, adduser)
+      output: "CREACION DE USUARIO (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, users, persistence]
+    
+    # 11. Detectar cambios de contraseña
+    - rule: Cambio de Password en Contenedor
+      desc: Detecta intentos de cambiar contraseñas
+      condition: evt.type=execve and container and proc.name in (passwd, chpasswd)
+      output: "CAMBIO DE PASSWORD (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, users, credentials]
+    
+    # 12. Detectar escaneo de puertos
+    - rule: Escaneo de Puertos Detectado
+      desc: Detecta herramientas de escaneo de puertos
+      condition: evt.type=execve and container and proc.name in (nmap, masscan, nc, netcat, ncat)
+      output: "ESCANEO DE PUERTOS (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, network, scanning]
+    
+    # 13. Detectar compilación de código
+    - rule: Compilacion de Codigo en Contenedor
+      desc: Detecta compiladores ejecutándose en contenedores
+      condition: evt.type=execve and container and proc.name in (gcc, g++, cc, make, cmake)
+      output: "COMPILADOR DETECTADO (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: INFO
+      tags: [custom, compilation, development]
+    
+    # 14. Detectar instalación de paquetes
+    - rule: Instalacion de Paquetes en Runtime
+      desc: Detecta gestores de paquetes instalando software
+      condition: evt.type=execve and container and proc.name in (apt-get, yum, apk, dnf, pip, npm)
+      output: "INSTALACION DE PAQUETES (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, package, runtime]
+    
+    # 15. Detectar creación de cron jobs
+    - rule: Creacion de Cron Job en Contenedor
+      desc: Detecta creación o modificación de tareas programadas
+      condition: evt.type=execve and container and proc.name in (crontab, at)
+      output: "CRON JOB DETECTADO (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, persistence, cron]
+
+ 
+
+

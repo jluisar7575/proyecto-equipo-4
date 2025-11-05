@@ -1,0 +1,177 @@
+---
+# 1. Default Deny ALL traffic en namespace de producción
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: production
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# 2. Permitir DNS (esencial para resolución de nombres)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: production
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    - podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# 3. Policy para Frontend App
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-netpol
+  namespace: production
+  annotations:
+    description: "Permite tráfico HTTP/HTTPS desde ingress y conexiones a backend"
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+      tier: web
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Permitir tráfico desde Ingress Controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  egress:
+  # Permitir conexión a backend
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backend
+          tier: api
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Permitir DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# 4. Policy para Backend App
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-netpol
+  namespace: production
+  annotations:
+    description: "Permite tráfico desde frontend y conexiones a base de datos"
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+      tier: api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Permitir tráfico desde frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+          tier: web
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Permitir conexión a base de datos
+  - to:
+    - podSelector:
+        matchLabels:
+          app: database
+          tier: data
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Permitir DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Permitir llamadas a APIs externas (ejemplo)
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+
+---
+# 5. Policy para Database
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-netpol
+  namespace: production
+  annotations:
+    description: "Permite solo conexiones desde backend autorizado"
+spec:
+  podSelector:
+    matchLabels:
+      app: database
+      tier: data
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Solo backend puede conectar
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+          tier: api
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress:
+  # Permitir DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+---
