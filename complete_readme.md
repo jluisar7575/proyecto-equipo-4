@@ -13,7 +13,7 @@
 
 Este proyecto implementa una solución integral de seguridad para Kubernetes que combina **detección de amenazas en tiempo real** con **microsegmentación de red**. Utilizamos Falco, una herramienta CNCF graduated, para monitorear el comportamiento de los contenedores a nivel de kernel mediante tecnología eBPF, mientras que las Network Policies de Kubernetes nos permiten implementar una arquitectura de red zero-trust.
 
-La solución detecta automáticamente actividades maliciosas como shells no autorizados, escalación de privilegios, acceso a archivos sensibles y comandos de reverse shell, enviando alertas en tiempo real a través de múltiples canales (Slack, Microsoft Teams, Dashboard web). Simultáneamente, las Network Policies garantizan que solo el tráfico de red explícitamente permitido pueda fluir entre los componentes, implementando el principio de menor privilegio.
+La solución detecta automáticamente actividades maliciosas como shells no autorizados, escalación de privilegios, acceso a archivos sensibles y comandos de reverse shell, enviando alertas en tiempo real a través de múltiples canales (Slack, Dashboard web). Simultáneamente, las Network Policies garantizan que solo el tráfico de red explícitamente permitido pueda fluir entre los componentes, implementando el principio de menor privilegio.
 
 ### ¿Por qué es importante?
 
