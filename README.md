@@ -327,11 +327,10 @@ chmod +x netpol_quick_test.sh
 
 ## 📖 Documentación Adicional
 
-- [📥 Guía de Instalación Detallada](docs/installation.md)
-- [⚙️ Configuración Avanzada](docs/configuration.md)
-- [🏛️ Arquitectura del Sistema](docs/architecture.md)
-- [🔧 Troubleshooting](docs/troubleshooting.md)
-- [🌐 Diagrama de Red](docs/network-diagram.md)
+- [📥 Guía de Instalación Detallada](docs/Instalacion_Completa.md)
+- [⚙️ Configuración Avanzada](docs/Configuracion_completa.md)
+- [🏛️ Arquitectura del Sistema](docs/Diagramas_Arquitecturas.md)
+- [🔧 Troubleshooting](docs/Troubleshooting.md)
 - [🎤 Presentación](docs/Presentacion.pdf)
 
 ## 👥 Equipo
