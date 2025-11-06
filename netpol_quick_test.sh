@@ -140,9 +140,8 @@ else
 fi
 echo ""
 
-
 # Test 5: Database -> Backend
-echo -e "${YELLOW}🧪 TEST 4: Database -> Backend (debe estar BLOQUEADO)${NC}"
+echo -e "${YELLOW}🧪 TEST 5: Database -> Backend (debe estar BLOQUEADO)${NC}"
 echo "Comando: kubectl exec test-database -n $NAMESPACE -- timeout 5 wget -qO- $BACKEND_IP:8080"
 kubectl exec test-database -n $NAMESPACE -- timeout 5 wget -qO- $BACKEND_IP:8080 &>/dev/null
 
@@ -154,7 +153,7 @@ fi
 echo ""
 
 # Test 6: Database -> Frontend
-echo -e "${YELLOW}🧪 TEST 4: Database -> Backend (debe estar BLOQUEADO)${NC}"
+echo -e "${YELLOW}🧪 TEST 6: Database -> Frontend (debe estar BLOQUEADO)${NC}"
 echo "kubectl exec test-database -n $NAMESPACE -- timeout 5 wget -qO- $FRONTEND_IP:80"
 kubectl exec test-database -n $NAMESPACE -- timeout 5 wget -qO- $FRONTEND_IP:80 &>/dev/null
 
@@ -165,9 +164,8 @@ else
 fi
 echo ""
 
-
 # Test 7: Unauthorized -> Backend (DEBE estar BLOQUEADO)
-echo -e "${YELLOW}🧪 TEST 4: Unauthorized → Backend:8080 (debe estar BLOQUEADO - Default Deny)${NC}"
+echo -e "${YELLOW}🧪 TEST 7: Unauthorized → Backend:8080 (debe estar BLOQUEADO - Default Deny)${NC}"
 echo "Comando: kubectl exec test-unauthorized -n $NAMESPACE -- timeout 5 nc -zv $BACKEND_IP 8080"
 kubectl exec test-unauthorized -n $NAMESPACE -- timeout 5 sh -c "echo test > /dev/tcp/$BACKEND_IP/8080" &>/dev/null
 if [ $? -ne 0 ]; then
@@ -178,7 +176,7 @@ fi
 echo ""
 
 # Test 8: Unauthorized -> Frontend (DEBE estar BLOQUEADO)
-echo -e "${YELLOW}🧪 TEST 4: Unauthorized → Backend:8080 (debe estar BLOQUEADO - Default Deny)${NC}"
+echo -e "${YELLOW}🧪 TEST 8: Unauthorized → FRONTEND:80 (debe estar BLOQUEADO - Default Deny)${NC}"
 echo "Comando: kubectl exec test-unauthorized -n $NAMESPACE -- timeout 5 nc -zv $FRONTEND_IP 80"
 kubectl exec test-unauthorized -n $NAMESPACE -- timeout 5 sh -c "echo test > /dev/tcp/$FRONTEND_IP/80" &>/dev/null
 if [ $? -ne 0 ]; then
@@ -190,7 +188,7 @@ echo ""
 
 
 # Test 9: DNS (Todos los pods deben poder resolver nombres)
-echo -e "${YELLOW}🧪 TEST 0: DNS Resolution (todos los pods deben resolver 'kubernetes.default')${NC}"
+echo -e "${YELLOW}🧪 TEST 9: DNS Resolution (todos los pods deben resolver 'kubernetes.default')${NC}"
 
 for pod in $(kubectl get pods -n $NAMESPACE -o name); do
   echo "Probando resolucion DNS desde $pod ..."
