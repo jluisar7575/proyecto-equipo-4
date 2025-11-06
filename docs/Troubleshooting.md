@@ -258,3 +258,79 @@ systemctl disable firewalld
 ```
 
 > Nota: Dependiendo del entorno, deberás permitir manualmente los puertos usados por Kubernetes y Calico en producción, pero para pruebas rápidas se recomienda detener temporalmente el firewall.
+---
+### Problema 4: *Los scripts `.sh` no se ejecutan correctamente en RHEL por formato DOS (CRLF)*
+
+#### Entorno  
+- **Sistema operativo:** RHEL / Rocky Linux 9  
+- **Shell:** Bash 5.x  
+- **Editor original:** Windows (VS Code, Notepad++, etc.)  
+
+---
+
+#### Descripción  
+Al ejecutar un script `.sh` copiado desde Windows, el sistema muestra errores como:  
+
+```bash
+bash: ./script.sh: /bin/bash^M: bad interpreter: No such file or directory
+```
+
+Esto ocurre porque el archivo está guardado con **saltos de línea DOS (CRLF)** en lugar de **Unix (LF)**.  
+
+---
+
+#### Síntomas  
+- Error `bad interpreter: No such file or directory`  
+- Error `command not found` al ejecutar líneas válidas del script  
+- Al inspeccionar con `file script.sh` se obtiene:  
+  ```
+  ASCII text, with CRLF line terminators
+  ```
+
+---
+
+#### Causa raíz  
+Los sistemas Linux solo reconocen los saltos de línea **LF**, mientras que Windows usa **CRLF**.  
+El carácter oculto `^M` generado por el formato DOS rompe la interpretación del script por `bash`.
+
+---
+
+#### Solución 1: Convertir con `dos2unix` (recomendada)
+
+Instalar la utilidad y ejecutar la conversión:
+
+```bash
+sudo dnf install -y dos2unix
+dos2unix script.sh
+```
+
+También puedes convertir todos los scripts del directorio actual:
+
+```bash
+dos2unix *.sh
+```
+
+Verifica el resultado:
+
+```bash
+file script.sh
+# Debería mostrar: ASCII text
+```
+
+---
+
+#### Solución 2: Convertir con `sed` (sin instalar nada)
+
+Si no tienes `dos2unix` disponible, puedes eliminar los caracteres `\r` manualmente:
+
+```bash
+sed -i 's/\r$//' script.sh
+```
+
+✅ Esto limpia los retornos de carro del formato DOS y deja el archivo con formato Unix (LF).  
+Verifica nuevamente con:
+
+```bash
+file script.sh
+```
+
