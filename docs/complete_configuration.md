@@ -8,9 +8,6 @@
 2. [Configuración de Reglas Custom](#2-configuración-de-reglas-custom)
 3. [Configuración de Network Policies](#3-configuración-de-network-policies)
 4. [Configuración de Alertas](#4-configuración-de-alertas)
-5. [Configuración de Persistencia](#5-configuración-de-persistencia)
-6. [Configuración de Recursos](#6-configuración-de-recursos)
-7. [Configuración Avanzada](#7-configuración-avanzada)
 
 ---
 
@@ -112,57 +109,7 @@ kubectl get svc -n falco falco-grpc
 # NAME         TYPE        CLUSTER-IP      PORT(S)
 # falco-grpc   ClusterIP   10.96.123.45    5060/TCP
 ```
-
-### 1.2 Aplicar Configuración Personalizada
-
-```bash
-# Crear archivo de valores personalizado
-cat > custom-falco-values.yaml <<EOF
-driver:
-  kind: modern_ebpf
-  
-tty: true
-
-daemonset:
-  hostNetwork: true
-
-falcosidekick:
-  enabled: true
-  fullfqdn: falcosidekick.falco.svc.cluster.local
-
-falco:
-  grpc:
-    enabled: true
-  grpc_output:
-    enabled: true
-
-# Configuración de recursos
-resources:
-  requests:
-    cpu: 100m
-    memory: 512Mi
-  limits:
-    cpu: 1000m
-    memory: 1024Mi
-EOF
-
-# Actualizar Falco con nueva configuración
-helm upgrade falco falcosecurity/falco \
-  --namespace falco \
-  --values custom-falco-values.yaml
-```
-
-**Output esperado**:
-```
-Release "falco" has been upgraded. Happy Helming!
-NAME: falco
-LAST DEPLOYED: Tue Nov 04 10:25:00 2024
-NAMESPACE: falco
-STATUS: deployed
-REVISION: 2
-```
-
-### 1.3 Verificar Configuración Aplicada
+### 1. Verificar Configuración Aplicada
 
 ```bash
 # Ver valores actuales de Falco
@@ -351,50 +298,6 @@ Las listas y macros hacen las reglas más mantenibles:
   # Más fácil que repetir toda la condición
 ```
 
-### 2.6 Modificar Reglas Existentes
-
-```bash
-# Ver reglas actuales
-kubectl get configmap falco-custom-rules -n falco -o yaml
-
-# Editar reglas
-kubectl edit configmap falco-custom-rules -n falco
-
-# Reiniciar Falco para aplicar
-kubectl rollout restart daemonset/falco -n falco
-
-# Verificar que se cargaron
-kubectl logs -n falco -l app.kubernetes.io/name=falco | grep "Loading rules"
-```
-
-**Output esperado**:
-```
-Tue Nov 04 10:30:00 2024: Loading rules from: /etc/falco/falco_rules.yaml
-Tue Nov 04 10:30:00 2024: Loading rules from: /etc/falco/rules.d/custom-rules.yaml
-Tue Nov 04 10:30:01 2024: Loaded 15 custom rules
-```
-
-### 2.7 Probar una Regla Nueva
-
-```bash
-# Ejemplo: Probar regla de shell
-kubectl run test-shell --image=nginx --restart=Never
-kubectl exec test-shell -- /bin/bash -c "whoami"
-
-# Ver si se generó alerta
-kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20 | grep -i shell
-
-# Limpiar
-kubectl delete pod test-shell
-```
-
-**Output esperado de la alerta**:
-```
-Tue Nov 04 10:31:15 2024: Warning Shell spawned in container 
-  (user=root user_uid=0 container_id=abc123 container_name=test-shell 
-   image=nginx command=/bin/bash -c whoami pid=12345 parent=containerd-shim)
-```
-
 ---
 
 ## 3. Configuración de Network Policies
@@ -518,18 +421,6 @@ kubectl get networkpolicies -n production
 # default-deny-all   <none>         10s
 ```
 
-**Default Deny Ingress Only** (más práctico):
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-ingress
-  namespace: production
-spec:
-  podSelector: {}
-  policyTypes:
-  - Ingress  # Solo bloquea ingress, egress libre
-```
 
 **¿Cuándo usar cada uno?**
 
@@ -664,80 +555,29 @@ spec:
     - port: 53
       protocol: UDP
 ```
-
-### 3.6 Testing de Network Policies
-
-```bash
-# Script de test completo
-cat > test-netpol.sh <<'EOF'
-#!/bin/bash
-
-echo "Testing Network Policies..."
-
-# Crear pods con labels correctos
-kubectl run web -n production --labels="tier=web" --image=nginx
-kubectl run api -n production --labels="tier=api" --image=nginx  
-kubectl run db -n production --labels="tier=db" --image=nginx
-
-# Exponer como servicios
-kubectl expose pod api -n production --port=80
-kubectl expose pod db -n production --port=80
-
-sleep 10
-
-# Test 1: Web → API (debe funcionar)
-echo "Test 1: Web → API"
-kubectl exec web -n production -- curl -s -m 3 http://api && echo "✅ PASS" || echo "❌ FAIL"
-
-# Test 2: Web → DB (debe fallar)
-echo "Test 2: Web → DB"
-kubectl exec web -n production -- curl -s -m 3 http://db && echo "❌ FAIL" || echo "✅ PASS"
-
-# Test 3: API → DB (debe funcionar)
-echo "Test 3: API → DB"
-kubectl exec api -n production -- curl -s -m 3 http://db && echo "✅ PASS" || echo "❌ FAIL"
-
-# Limpiar
-kubectl delete pod web api db -n production
-kubectl delete svc api db -n production
-EOF
-
-chmod +x test-netpol.sh
-./test-netpol.sh
-```
-
-**Output esperado**:
-```
-Testing Network Policies...
-Test 1: Web → API
-✅ PASS
-Test 2: Web → DB
-✅ PASS (blocked as expected)
-Test 3: API → DB
-✅ PASS
-```
-
 ---
 
 ## 4. Configuración de Alertas
 
 ### 4.1 Configurar Slack
-
-**Paso 1: Crear Webhook en Slack**
-1. Ir a https://api.slack.com/messaging/webhooks
-2. Crear nuevo webhook
-3. Seleccionar canal (ej: `#security-alerts`)
-4. Copiar URL: `https://hooks.slack.com/services/T00/B00/XXX`
+**Paso 1: Crear Weebhook**
+- Crear Webhook en Slack
+- Ve a https://api.slack.com/apps
+- Click en "Create New App" → "From scratch"
+- Dale un nombre (ej: "Falco Alerts") y selecciona tu workspace
+- En el menú lateral, ve a "Incoming Webhooks"
+- Activa "Activate Incoming Webhooks"
+- Click en "Add New Webhook to Workspace"
+- Selecciona el canal donde quieres recibir las alertas
+- Copia la URL del webhook (se ve como: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX)
+- Editar el falco-values.yaml en la seccion del webhook (se indica en el manifiesto)
 
 **Paso 2: Configurar Falcosidekick**
 ```bash
-helm upgrade falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
+helm upgrade falco falcosecurity/falco \
+  -n falco \
   --reuse-values \
-  --set config.slack.webhookurl="https://hooks.slack.com/services/T00/B00/XXX" \
-  --set config.slack.minimumpriority="warning" \
-  --set config.slack.messageformat="text" \
-  --set config.slack.username="Falco Security"
+  --set falcosidekick.config.slack.webhookurl="https://hooks.slack.com/services/NUEVO/TOKEN/AQUI"  
 ```
 
 **Output esperado**:
@@ -768,32 +608,6 @@ Time: 2024-11-04 10:45:23 UTC
 [View in Dashboard]
 ```
 
-### 4.2 Configurar Microsoft Teams
-
-```bash
-# Crear Incoming Webhook en Teams
-# Copiar URL
-
-helm upgrade falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
-  --reuse-values \
-  --set config.teams.webhookurl="https://outlook.office.com/webhook/xxx" \
-  --set config.teams.minimumpriority="warning" \
-  --set config.teams.activityimage="https://falco.org/img/falco-logo.png"
-```
-
-### 4.3 Configurar Múltiples Destinos
-
-```bash
-helm upgrade falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
-  --reuse-values \
-  --set config.slack.webhookurl="..." \
-  --set config.teams.webhookurl="..." \
-  --set config.webhook.address="http://my-siem.com/webhook" \
-  --set config.webhook.minimumpriority="error"
-```
-
 **Verificar configuración**:
 ```bash
 kubectl logs -n falco -l app.kubernetes.io/name=falcosidekick | grep -i "enabled\|output"
@@ -808,134 +622,3 @@ kubectl logs -n falco -l app.kubernetes.io/name=falcosidekick | grep -i "enabled
 ```
 
 ---
-
-## 5. Configuración de Persistencia
-
-### 5.1 Redis con PersistentVolume
-
-```yaml
-# Crear StorageClass
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: redis-storage
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
----
-# Crear PersistentVolume
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: redis-pv
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-  - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: redis-storage
-  hostPath:
-    path: /mnt/data/redis
-    type: DirectoryOrCreate
-```
-
-**Aplicar**:
-```bash
-kubectl apply -f redis-storage.yaml
-
-# Reinstalar con persistencia
-helm upgrade falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
-  --reuse-values \
-  --set redis.master.persistence.enabled=true \
-  --set redis.master.persistence.storageClass=redis-storage \
-  --set redis.master.persistence.size=10Gi
-```
-
-**Verificar**:
-```bash
-kubectl get pvc -n falco
-```
-
-**Output esperado**:
-```
-NAME                          STATUS   VOLUME     CAPACITY   ACCESS MODES
-redis-data-...-redis-0        Bound    redis-pv   10Gi       RWO
-```
-
----
-
-## 6. Configuración de Recursos
-
-### 6.1 Limites y Requests
-
-```yaml
-# Para Falco
-resources:
-  requests:
-    cpu: 100m      # CPU mínima garantizada
-    memory: 512Mi  # RAM mínima garantizada
-  limits:
-    cpu: 1000m     # CPU máxima permitida
-    memory: 1024Mi # RAM máxima permitida
-```
-
-**Aplicar**:
-```bash
-helm upgrade falco falcosecurity/falco \
-  --namespace falco \
-  --reuse-values \
-  --set resources.requests.cpu=100m \
-  --set resources.requests.memory=512Mi \
-  --set resources.limits.cpu=1000m \
-  --set resources.limits.memory=1024Mi
-```
-
-**Verificar uso real**:
-```bash
-kubectl top pod -n falco
-```
-
-**Output esperado**:
-```
-NAME                       CPU(cores)   MEMORY(bytes)
-falco-xxxxx                45m          350Mi
-falco-yyyyy                42m          340Mi
-falcosidekick-zzzzz        15m          128Mi
-```
-
----
-
-## 7. Configuración Avanzada
-
-### 7.1 Rate Limiting de Alertas
-
-```bash
-helm upgrade falco falcosecurity/falco \
-  --namespace falco \
-  --reuse-values \
-  --set falco.outputs_rate=5  # Max 5 alertas por segundo
-```
-
-### 7.2 Buffering de Eventos
-
-```bash
-helm upgrade falco falcosecurity/falco \
-  --namespace falco \
-  --reuse-values \
-  --set falco.outputs_max_burst=1000  # Buffer de 1000 eventos
-```
-
-### 7.3 Configuración de Log Level
-
-```bash
-helm upgrade falco falcosecurity/falco \
-  --namespace falco \
-  --reuse-values \
-  --set falco.log_level=info  # debug, info, warning, error
-```
-
----
-
-**Total de palabras**: ~2,500 ✅  
-**Última actualización**: Noviembre 2024
