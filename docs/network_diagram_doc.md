@@ -1,144 +1,108 @@
-# 🌐 Diagrama de Flujos de Red
-
-## Arquitectura de Red con Network Policies
-
-Este diagrama muestra todos los flujos de red permitidos y bloqueados en el cluster.
-
-```mermaid
 graph TB
     subgraph Internet["🌐 Internet"]
         Users[👥 Usuarios]
     end
     
-    subgraph IngressNS["Namespace: ingress-nginx"]
-        Ingress[🚪 Ingress Controller<br/>Puerto 80/443]
-    end
-    
-    subgraph ProdNS["Namespace: production"]
-        subgraph Frontend["Frontend Tier"]
-            FE[🖥️ Frontend App<br/>nginx:80,443]
+    subgraph Cluster["☸️ Kubernetes Cluster - 3 Nodos"]
+        subgraph Master["🎛️ Master Node"]
+            API[API Server]
+            Scheduler[Scheduler]
+            ETCD[(etcd)]
+            FalcoM[🛡️ Falco Agent]
         end
         
-        subgraph Backend["Backend Tier"]
-            BE[⚙️ Backend API<br/>app:8080]
+        subgraph Worker1["⚙️ Worker Node 1"]
+            FalcoW1[🛡️ Falco Agent]
+            Pods1[Application Pods]
+            Kernel1[Kernel - Syscalls]
         end
         
-        subgraph Database["Database Tier"]
-            DB[(🗄️ PostgreSQL<br/>postgres:5432)]
+        subgraph Worker2["⚙️ Worker Node 2"]
+            FalcoW2[🛡️ Falco Agent]
+            Pods2[Application Pods]
+            Kernel2[Kernel - Syscalls]
         end
         
-        subgraph Cache["Cache Tier"]
-            Redis[(📦 Redis<br/>redis:6379)]
+        subgraph FalcoNS["📦 Namespace: falco"]
+            Falcosidekick[📢 Falcosidekick<br/>Alert Router]
+            Redis[(💾 Redis<br/>Event Storage)]
+            FalcoUI[🖥️ Dashboard UI<br/>Port 2802]
+        end
+        
+        subgraph ProdNS["📦 Namespace: production"]
+            Frontend[🌐 Frontend<br/>nginx:80/443]
+            Backend[⚙️ Backend API<br/>Port 8080]
+            Database[(🗄️ PostgreSQL<br/>Port 5432)]
+            NetPol[🔒 Network Policies<br/>Default Deny]
+        end
+        
+        subgraph DNSService["📦 Namespace: kube-system"]
+            DNS[🌐 CoreDNS<br/>Port 53]
         end
     end
     
-    subgraph MonitoringNS["Namespace: monitoring"]
-        Prometheus[📊 Prometheus<br/>:9090]
-        Grafana[📈 Grafana<br/>:3000]
+    subgraph External["🌍 External Services"]
+        Slack[💬 Slack/Teams]
+        ExternalAPI[🔌 External APIs<br/>Port 443]
     end
     
-    subgraph LoggingNS["Namespace: logging"]
-        ES[🔍 Elasticsearch<br/>:9200,9300]
-        Kibana[📊 Kibana<br/>:5601]
-        Fluentd[📝 Fluentd]
+    subgraph Matrix["📊 MATRIZ DE CONECTIVIDAD"]
+        direction TB
+        M1["✅ Internet → Frontend :80/443<br/>Tráfico público via Ingress"]
+        M2["✅ Frontend → Backend :8080<br/>Llamadas API desde capa web"]
+        M3["❌ Frontend ⛔ Database :5432<br/>BLOQUEADO - No acceso directo"]
+        M4["✅ Backend → Database :5432<br/>Única fuente autorizada"]
+        M5["✅ Backend → External APIs :443<br/>Integraciones externas"]
+        M6["❌ Database ⛔ Cualquiera<br/>BLOQUEADO - DB Aislada"]
+        M7["✅ Todos → DNS :53<br/>Resolución de nombres"]
+        M8["❌ Pods sin policy ⛔ Cualquiera<br/>BLOQUEADO - Default Deny"]
     end
     
-    subgraph KubeSystem["Namespace: kube-system"]
-        DNS[🌐 CoreDNS<br/>:53 UDP/TCP]
-    end
+    %% Conexiones permitidas (verde)
+    Users -->|HTTPS :80/443| Frontend
+    Frontend -->|API :8080| Backend
+    Backend -->|SQL :5432| Database
+    Backend -->|HTTPS :443| ExternalAPI
+    Frontend -.->|DNS :53| DNS
+    Backend -.->|DNS :53| DNS
     
-    subgraph FalcoNS["Namespace: falco"]
-        FalcoDaemon[🛡️ Falco DaemonSet<br/>eBPF Monitor]
-        FalcoSK[📢 Falcosidekick<br/>Alert Router]
-        FalcoUI[🖥️ Falcosidekick UI<br/>:2802]
-    end
+    %% Conexiones bloqueadas (rojo)
+    Frontend -.->|❌ BLOCKED :5432| Database
+    Database -.->|❌ BLOCKED| ExternalAPI
     
-    subgraph External["🌍 Servicios Externos"]
-        ExtAPI[🔌 APIs Externas<br/>:443]
-        Slack[💬 Slack/Teams<br/>Webhooks]
-    end
+    %% Falco Monitoring
+    Kernel1 -->|Syscalls/Eventos| FalcoW1
+    Kernel2 -->|Syscalls/Eventos| FalcoW2
+    Pods1 -.->|K8s API Events| FalcoW1
+    Pods2 -.->|K8s API Events| FalcoW2
+    API -.->|K8s API Events| FalcoM
     
-    %% Flujos de usuarios
-    Users -->|HTTP/HTTPS| Ingress
-    Ingress -->|HTTP/HTTPS| FE
+    FalcoM -->|Alertas JSON| Falcosidekick
+    FalcoW1 -->|Alertas JSON| Falcosidekick
+    FalcoW2 -->|Alertas JSON| Falcosidekick
     
-    %% Flujos internos de aplicación
-    FE -->|REST API :8080| BE
-    FE -.->|❌ BLOQUEADO| DB
-    BE -->|SQL :5432| DB
-    BE -->|Cache :6379| Redis
-    BE -->|HTTPS :443| ExtAPI
+    Falcosidekick -->|Store Events| Redis
+    Falcosidekick -->|HTTP Webhook| Slack
+    Falcosidekick -->|Dashboard Feed| FalcoUI
     
-    %% Flujos de DNS (todos los pods)
-    FE -.->|DNS :53| DNS
-    BE -.->|DNS :53| DNS
-    DB -.->|DNS :53| DNS
-    Redis -.->|DNS :53| DNS
-    Prometheus -.->|DNS :53| DNS
+    %% Network Policy Enforcement
+    NetPol -.->|Enforce Rules| Frontend
+    NetPol -.->|Enforce Rules| Backend
+    NetPol -.->|Enforce Rules| Database
     
-    %% Flujos de monitoreo
-    Prometheus -->|Scrape :8080| FE
-    Prometheus -->|Scrape :8080| BE
-    Prometheus -->|Scrape :9090| DB
-    Grafana -->|Query :9090| Prometheus
-    
-    %% Flujos de logging
-    Fluentd -->|Logs :9200| ES
-    Kibana -->|Query :9200| ES
-    ES <-->|Cluster :9300| ES
-    
-    %% Flujos de Falco
-    FalcoDaemon -->|Events| FalcoSK
-    FalcoSK -->|Alerts| Slack
-    FalcoSK -->|Dashboard| FalcoUI
+    %% Admin Access
+    FalcoUI -->|Visual Dashboard| Users
+    Slack -->|Real-time Alerts| Users
     
     %% Estilos
-    classDef allowed fill:#90EE90,stroke:#006400,stroke-width:2px
-    classDef blocked fill:#FFB6C6,stroke:#8B0000,stroke-width:2px,stroke-dasharray: 5 5
     classDef security fill:#FFD700,stroke:#FF8C00,stroke-width:3px
-    classDef external fill:#87CEEB,stroke:#4682B4,stroke-width:2px
+    classDef blocked fill:#FFB6C6,stroke:#8B0000,stroke-width:2px,stroke-dasharray: 5 5
+    classDef allowed fill:#90EE90,stroke:#006400,stroke-width:2px
+    classDef matrix fill:#E6F3FF,stroke:#0066CC,stroke-width:2px
+    classDef netpol fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
     
-    class FE,BE,DB,Redis,Prometheus,Grafana allowed
-    class FalcoDaemon,FalcoSK,FalcoUI security
-    class ExtAPI,Slack external
-```
-
-## Leyenda
-
-### Colores y Estilos
-
-- 🟢 **Verde sólido**: Flujo PERMITIDO por Network Policy
-- 🔴 **Rojo punteado**: Flujo BLOQUEADO por Network Policy
-- 🟡 **Amarillo**: Componentes de seguridad (Falco)
-- 🔵 **Azul claro**: Servicios externos
-
-### Símbolos
-
-- **→** Flecha sólida: Conexión permitida
-- **⇢** Flecha punteada: Conexión bloqueada
-- **↔** Doble flecha: Comunicación bidireccional
-
-## Flujos Permitidos
-
-### Production Namespace
-
-| Origen | Destino | Puerto | Protocolo | Justificación |
-|--------|---------|--------|-----------|---------------|
-| Internet | Frontend | 80, 443 | TCP | Acceso público a la aplicación |
-| Frontend | Backend | 8080 | TCP | Consumo de API REST |
-| Backend | Database | 5432 | TCP | Consultas SQL |
-| Backend | Redis | 6379 | TCP | Cache de datos |
-| Backend | Internet | 443 | TCP | Llamadas a APIs externas |
-| Todos | CoreDNS | 53 | UDP/TCP | Resolución de nombres |
-
-### Flujos BLOQUEADOS
-
-| Origen | Destino | Razón |
-|--------|---------|-------|
-| Frontend | Database | ❌ Violación de arquitectura 3-tier |
-| Frontend | Redis | ❌ Solo backend puede acceder al cache |
-| Internet | Backend | ❌ Backend no debe ser accesible directamente |
-| Internet | Database | ❌ Database nunca debe ser pública |
-| Database | Internet | ❌ Database no necesita salida a internet |
-
-## Network
+    class FalcoM,FalcoW1,FalcoW2,Falcosidekick,FalcoUI,Redis security
+    class M3,M6,M8 blocked
+    class M1,M2,M4,M5,M7 allowed
+    class Matrix matrix
+    class NetPol netpol
