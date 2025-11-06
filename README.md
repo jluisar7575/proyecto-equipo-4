@@ -332,7 +332,7 @@ chmod +x netpol_quick_test.sh
 - [🏛️ Arquitectura del Sistema](docs/architecture.md)
 - [🔧 Troubleshooting](docs/troubleshooting.md)
 - [🌐 Diagrama de Red](docs/network-diagram.md)
-- [🎤 Guía de Presentación](docs/presentacion.pdf)
+- [🎤 Guía de Presentación](docs/Presentacion.pdf)
 
 ## 👥 Equipo
 
