@@ -149,17 +149,11 @@ graph TB
 - **Default Deny en Production**: Todo el tráfico bloqueado por defecto
 - **Whitelisting explícito**: Solo conexiones autorizadas permitidas
 - **Microsegmentación 3-tier**: Web → API → Database
-- **12+ políticas implementadas** cubriendo:
-  - Namespace production (5 policies)
-  - Namespace staging (2 policies)
-  - Namespace development (1 policy - allow all)
-  - DNS y registry access (2 policies)
-  - Monitoring y logging (2 policies)
 
 ### ✅ Sistema de Alertas
 
 - **Falcosidekick**: Router centralizado de eventos
-- **Múltiples salidas**: Slack, Microsoft Teams, Dashboard, Redis
+- **Múltiples salidas**: Slack, Dashboard, Redis
 - **Configuración de prioridad mínima**: Solo alertas relevantes
 - **Dashboard web**: Visualización en tiempo real con UI responsive
 - **Persistencia**: Redis con PVC para histórico de eventos
@@ -179,9 +173,8 @@ graph TB
 |------------|--------|-------------|
 | **Nodos** | 3 (1 master + 2 workers) | 5 (1 master + 4 workers) |
 | **CPU por nodo** | 2 vCPUs | 4 vCPUs |
-| **RAM por nodo** | 4 GB | 8 GB |
-| **Disco por nodo** | 20 GB | 50 GB |
-| **Red** | 1 Gbps | 10 Gbps |
+| **RAM por nodo** | 2 GB | 8 GB |
+| **Disco por nodo** | 30 GB | 50 GB |
 
 ### Software Requerido
 
