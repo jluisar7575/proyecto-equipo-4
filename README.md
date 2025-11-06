@@ -332,13 +332,12 @@ chmod +x netpol_quick_test.sh
 - [🏛️ Arquitectura del Sistema](docs/architecture.md)
 - [🔧 Troubleshooting](docs/troubleshooting.md)
 - [🌐 Diagrama de Red](docs/network-diagram.md)
-- [🎤 Guía de Presentación](docs/presentacion.pdf)
+- [🎤 Presentación](docs/Presentacion.pdf)
 
 ## 👥 Equipo
 
-- **Equipo**: [Equipo 4]
-- **Integrantes**: [Alvarez Reyes Juan Luis]
-                   [Martínez Balderas Roberto] 
+- **Equipo**: Equipo 4
+- **Integrantes**: Alvarez Reyes Juan Luis y Martínez Balderas Roberto 
 - **Herramientas Asignadas**: Falco + Network Policies
 - **Fecha**: Noviembre 2025
 
