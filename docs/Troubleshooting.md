@@ -1,4 +1,4 @@
-# TROUBLESHOOTING GUIDE
+# TROUBLESHOOTING
 
 Guía centralizada de resolución de problemas del proyecto.  
 Documenta incidencias técnicas, sus causas, soluciones y pasos de verificación.
