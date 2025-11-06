@@ -209,45 +209,22 @@ graph TB
 
 ```bash
 git clone https://github.com/jluisar7575/proyecto-equipo-4.git
-cd proyecto-equipo-4/
 ```
 ### Paso 2: Copiar todos los archivos necesarios al home
+```bash
 cp ~/proyecto-equipo-4/manifests/*.yaml ~/
-
+cp ~/proyecto-equipo-4/scripts/*.sh ~/
+```
 ### Paso 3: Ejecutar Instalación Automatizada
 
 ```bash
 # Da permisos de ejecución
-chmod +x scripts/install.sh
+chmod +x falco-install.sh
 
-# Ejecuta la instalación
-./scripts/install.sh
+# Ejecuta la instalación (si es la primera vez te pedira aceptar la huella y el password de los nodos)
+./falco-install.sh
 ```
-
 **Tiempo estimado**: 5-7 minutos
-
-**Output esperado**:
-```
-🔍 Verificando prerequisitos...
-✅ kubectl encontrado
-✅ helm encontrado
-✅ Cluster accesible
-
-📦 Creando namespaces...
-✅ Namespace falco creado
-✅ Namespace production creado
-
-🛡️  Instalando Falco...
-✅ Falco instalado correctamente
-
-📢 Instalando Falcosidekick...
-✅ Falcosidekick instalado
-
-🔒 Aplicando Network Policies...
-✅ 12 policies aplicadas
-
-✅ INSTALACIÓN COMPLETADA
-```
 
 ### Paso 3: Verificar Instalación
 
@@ -265,7 +242,7 @@ kubectl get pods -n falco
 
 # Ver Network Policies aplicadas
 kubectl get networkpolicies -A
-# Salida esperada: 12+ policies listadas
+# Salida esperada: 5 policies listadas para produccion
 
 # Verificar que Falco está detectando eventos
 kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20
@@ -278,45 +255,31 @@ kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20
 
 ```bash
 # 1. Crear Incoming Webhook en Slack
-# Ir a: https://api.slack.com/messaging/webhooks
-# Copiar la URL del webhook
+    # Ve a https://api.slack.com/apps
+    # Click en "Create New App" → "From scratch"
+    # Dale un nombre (ej: "Falco Alerts") y selecciona tu workspace
+    # En el menú lateral, ve a "Incoming Webhooks"
+    # Activa "Activate Incoming Webhooks"
+    # Click en "Add New Webhook to Workspace"
+    # Selecciona el canal donde quieres recibir las alertas
+    # Copia la URL del webhook (se ve como: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX)
+    # Editar el falco-values.yaml en la seccion del webhook (se indica en el manifiesto)
 
 # 2. Actualizar Falcosidekick
-helm upgrade falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
+helm upgrade falco falcosecurity/falco \
+  -n falco \
   --reuse-values \
-  --set config.slack.webhookurl="https://hooks.slack.com/services/TU/WEBHOOK/URL" \
-  --set config.slack.minimumpriority="warning"
+  --set falcosidekick.config.slack.webhookurl="https://hooks.slack.com/services/NUEVO/TOKEN/AQUI"
 
 # 3. Verificar configuración
 kubectl logs -n falco -l app.kubernetes.io/name=falcosidekick --tail=20
 ```
 
-### Configurar Alertas a Microsoft Teams
-
-```bash
-helm upgrade falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
-  --reuse-values \
-  --set config.teams.webhookurl="https://outlook.office.com/webhook/..." \
-  --set config.teams.minimumpriority="warning"
-```
-
 ### Acceder al Dashboard
 
 ```bash
-# Método 1: Port-forward (desarrollo)
-kubectl port-forward -n falco svc/falcosidekick-ui 2802:2802
-
-# Método 2: NodePort (producción)
-kubectl expose service falcosidekick-ui \
-  --type=NodePort \
-  --name=falcosidekick-ui-nodeport \
-  -n falco
-
-# Obtener puerto asignado
-kubectl get svc falcosidekick-ui-nodeport -n falco
-```
+# Exponer el puerto al navegador
+kubectl port-forward -n falco svc/falco-falcosidekick-ui 2802:2802 --address=0.0.0.0
 
 Abrir en navegador: `http://<NODE-IP>:<NODEPORT>`
 
@@ -342,49 +305,25 @@ kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=30 | grep -i shell
 # Limpiar
 kubectl delete pod test-alert
 ```
+### Validar Custom Rules
 
+```bash
+# Da permisos de ejecución
+chmod +x test-custom-rules.sh
+
+# Ejecuta
+./test-custom-rules.sh
+```
 ### Validar Network Policies
 
 ```bash
-# Crear pods de prueba
-kubectl run frontend -n production --image=nginx --labels="app=frontend,tier=web"
-kubectl run backend -n production --image=nginx --labels="app=backend,tier=api"
+# Da permisos de ejecución
+chmod +x netpol_quick_test.sh
 
-# Test: Frontend PUEDE acceder a Backend (debe funcionar)
-kubectl exec frontend -n production -- curl -s backend:80
-
-# Test: Pod sin labels NO puede acceder (debe fallar)
-kubectl run attacker -n production --image=nginx
-kubectl exec attacker -n production -- curl -s backend:80
-# Salida esperada: Connection timed out (bloqueado por Network Policy)
-
-# Limpiar
-kubectl delete pod frontend backend attacker -n production
+# Ejecuta
+./netpol_quick_test.sh
 ```
 
-### Ejecutar Suite Completa de Tests
-
-```bash
-# Tests de Falco
-./scripts/test.sh
-
-# Tests de integración
-./tests/integration-tests.sh
-
-# Salida esperada:
-# ✅ Todos los tests pasaron: 15/15
-```
-
-## 📊 Métricas de Éxito
-
-| Métrica | Objetivo | Alcanzado |
-|---------|----------|-----------|
-| Pods protegidos | 100% | ✅ 100% |
-| Tiempo de detección | < 2 seg | ✅ < 1 seg |
-| Reglas implementadas | 15+ | ✅ 15 reglas |
-| Network Policies | 10+ | ✅ 12 policies |
-| Cobertura de namespaces | 80% | ✅ 100% |
-| Falsos positivos | < 5% | ✅ 0% |
 
 ## 📖 Documentación Adicional
 
@@ -393,15 +332,14 @@ kubectl delete pod frontend backend attacker -n production
 - [🏛️ Arquitectura del Sistema](docs/architecture.md)
 - [🔧 Troubleshooting](docs/troubleshooting.md)
 - [🌐 Diagrama de Red](docs/network-diagram.md)
-- [🎤 Guía de Presentación](docs/presentation-guide.md)
+- [🎤 Guía de Presentación](docs/presentacion.pdf)
 
 ## 👥 Equipo
 
-- **Equipo**: [Nombre del Equipo]
-- **Integrantes**: [Nombres completos]
+- **Equipo**: [Equipo 4]
+- **Integrantes**: [Alvarez Reyes Juan Luis]
 - **Herramientas Asignadas**: Falco + Network Policies
-- **Curso**: Seguridad en Kubernetes
-- **Fecha**: Noviembre 2024
+- **Fecha**: Noviembre 2025
 
 ## 🔗 Referencias y Recursos
 
@@ -416,6 +354,3 @@ kubectl delete pod frontend backend attacker -n production
 Este proyecto es parte del curso de Seguridad en Kubernetes y está bajo licencia MIT para propósitos educativos.
 
 ---
-
-**Palabras totales**: ~1,850 palabras ✅  
-**Última actualización**: Noviembre 2024
