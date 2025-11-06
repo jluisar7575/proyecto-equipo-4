@@ -336,9 +336,8 @@ chmod +x netpol_quick_test.sh
 
 ## 👥 Equipo
 
-- **Equipo**: [Equipo 4]
-- **Integrantes**: [Alvarez Reyes Juan Luis]
-                   [Martínez Balderas Roberto] 
+- **Equipo**: Equipo 4
+- **Integrantes**: Alvarez Reyes Juan Luis y Martínez Balderas Roberto 
 - **Herramientas Asignadas**: Falco + Network Policies
 - **Fecha**: Noviembre 2025
 
