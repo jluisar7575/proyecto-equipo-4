@@ -45,6 +45,20 @@ En un escenario de producción, esta solución puede:
 
 ## 🏗️ Arquitectura
 
+### Diagrama de Componentes (General)
+```mermaid
+graph TD
+    subgraph Cluster Kubernetes
+        F[Pods del Cluster] -->|Eventos del contenedor / K8s API| A[Pod Falco DaemonSet]
+        E[Kernel Host] -->|Syscalls / Eventos del sistema| A
+        A -->|Alertas JSON| B[Falcosidekick Pod]
+        B -->|Notificaciones| C[Falcosidekick UI]
+        B -->|HTTP Webhook| D[Slack Channel]
+        G[Network Policies] -->|Restringen tráfico| F
+    end
+    C -->|Dashboard visual| H[Usuario / Admin]
+    D -->|Alertas en tiempo real| H
+```
 ### Diagrama de Componentes
 
 ```mermaid
@@ -81,19 +95,16 @@ graph TB
             Frontend[🖥️ Frontend<br/>nginx:80]
             Backend[⚙️ Backend API<br/>:8080]
             Database[(🗄️ PostgreSQL<br/>:5432)]
-            Cache[(📦 Redis<br/>:6379)]
         end
     end
     
     subgraph External["External Services"]
         Slack[💬 Slack/Teams]
-        Registry[🐳 Container Registry]
     end
     
     Users -->|HTTPS| Frontend
     Frontend -->|API| Backend
     Backend -->|SQL| Database
-    Backend -->|Cache| Cache
     Frontend -.->|❌ BLOCKED| Database
     
     FalcoM -->|Events| Falcosidekick
@@ -112,7 +123,7 @@ graph TB
 
 ```
 1. Syscall en Container → 2. eBPF captura → 3. Falco evalúa reglas → 
-4. Alerta generada → 5. Falcosidekick enruta → 6. Múltiples destinos (Slack/UI/SIEM)
+4. Alerta generada → 5. Falcosidekick enruta → 6. Múltiples destinos (Slack/UI)
 ```
 
 ### Capas de Seguridad
@@ -141,7 +152,6 @@ graph TB
   - Uso de herramientas de red (tcpdump, nmap)
   - Acceso a Kubernetes secrets
   - Y más...
-- **Mapeo a MITRE ATT&CK**: Cada regla etiquetada con táctica correspondiente
 - **Prioridades definidas**: CRITICAL, ERROR, WARNING, NOTICE
 
 ### ✅ Network Policies
@@ -185,7 +195,7 @@ graph TB
 
 # Kubernetes
 - Kubernetes 1.28 o superior
-- CNI plugin instalado (Calico recomendado, Flannel soportado)
+- CNI plugin instalado (Calico recomendado)
 - kubectl configurado
 
 # Herramientas
@@ -193,45 +203,18 @@ graph TB
 - Git 2.x
 - Opcional: Docker/Podman para builds locales
 ```
-
-### Verificación de Prerequisitos
-
-```bash
-# Verificar versión de Kubernetes
-kubectl version --short
-# Salida esperada: Client v1.28.x, Server v1.28.x
-
-# Verificar nodos disponibles
-kubectl get nodes
-# Salida esperada: 3 nodos en estado Ready
-
-# Verificar Helm
-helm version
-# Salida esperada: version.BuildInfo{Version:"v3.x.x"}
-
-# Verificar kernel (debe ser >= 5.8)
-uname -r
-# Salida esperada: 5.8.0 o superior
-
-# Verificar conectividad del cluster
-kubectl cluster-info
-# Salida esperada: Kubernetes control plane is running...
-
-# Verificar CNI está funcionando
-kubectl get pods -n kube-system | grep -E "calico|flannel|weave"
-# Salida esperada: Pods de CNI en estado Running
-```
-
-## 🚀 Instalación Rápida (5 minutos)
+## 🚀 OPCION 1: Instalación Rápida (5 minutos)
 
 ### Paso 1: Clonar el Repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/proyecto-seguridad-k8s.git
-cd proyecto-seguridad-k8s
+git clone https://github.com/jluisar7575/proyecto-equipo-4.git
+cd proyecto-equipo-4/
 ```
+### Paso 2: Copiar todos los archivos necesarios al home
+cp ~/proyecto-equipo-4/manifests/*.yaml ~/
 
-### Paso 2: Ejecutar Instalación Automatizada
+### Paso 3: Ejecutar Instalación Automatizada
 
 ```bash
 # Da permisos de ejecución
