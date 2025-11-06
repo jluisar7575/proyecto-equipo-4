@@ -9,13 +9,11 @@
 1. [Verificación de Prerequisitos](#verificación-de-prerequisitos)
 2. [Preparación del Entorno](#preparación-del-entorno)
 3. [Instalación de Falco](#instalación-de-falco)
-4. [Instalación de Falcosidekick](#instalación-de-falcosidekick)
+4. [Exponer Dashboard UI](#exponer-dashboard-UI)
 5. [Aplicación de Reglas Custom](#aplicación-de-reglas-custom)
-6. [Configuración de Storage](#configuración-de-storage)
+6. [Integracion con Slack](#integracion-con-slack)
 7. [Despliegue de Network Policies](#despliegue-de-network-policies)
 8. [Verificación Post-Instalación](#verificación-post-instalación)
-9. [Configuración de Alertas](#configuración-de-alertas)
-
 ---
 
 ## 1. Verificación de Prerequisitos
@@ -143,10 +141,10 @@ uname -r
 
 ```bash
 # Clonar el proyecto
-git clone https://github.com/tu-usuario/proyecto-seguridad-k8s.git
+git clone https://github.com/jluisar7575/proyecto-equipo-4.git
 
 # Entrar al directorio
-cd proyecto-seguridad-k8s
+cd proyecto-equipo-4/
 
 # Verificar estructura
 ls -la
@@ -160,65 +158,47 @@ drwxr-xr-x  scripts/
 drwxr-xr-x  helm/
 -rw-r--r--  README.md
 ```
-
-**¿Qué contiene cada carpeta?**
-- `docs/`: Documentación del proyecto
-- `manifests/`: Archivos YAML de Kubernetes
-- `scripts/`: Scripts de automatización
-- `helm/`: Charts de Helm para despliegue
-
-### 2.2 Crear Namespaces
-
+### 2.2 Copiar todos los archivos necesarios al home
 ```bash
-# Crear todos los namespaces necesarios
-kubectl create namespace falco
-kubectl create namespace production
-kubectl create namespace staging
-kubectl create namespace development
-kubectl create namespace monitoring
-kubectl create namespace logging
+cp ~/proyecto-equipo-4/manifests/*.yaml ~/
+cp ~/proyecto-equipo-4/scripts/*.sh ~/
 ```
-
-**Output esperado (por cada comando)**:
-```
-namespace/falco created
-namespace/production created
-...
-```
-
-**¿Por qué separar en namespaces?**  
-Los namespaces proporcionan:
-- **Aislamiento lógico**: Separación de recursos
-- **Network Policies**: Cada namespace puede tener políticas diferentes
-- **RBAC**: Control de acceso granular
-- **Quotas**: Límites de recursos independientes
-
+### 2.2 Copiar todos los archivos necesarios al home
 ```bash
-# Etiquetar kube-system para Network Policies
-kubectl label namespace kube-system name=kube-system --overwrite
+cp ~/proyecto-equipo-4/manifests/*.yaml ~/
+cp ~/proyecto-equipo-4/scripts/*.sh ~/
 ```
-
-**¿Por qué etiquetar?**  
-Las Network Policies usan selectores de labels. Etiquetamos kube-system para permitir que otros pods accedan a CoreDNS (necesario para resolución de nombres).
-
-### 2.3 Verificar Namespaces
-
+### 2.3 Crear un volumen persistente en cada worker
 ```bash
-# Listar todos los namespaces
-kubectl get namespaces
+#Cambiar el nombre del Nodo en el comando si cuentas con otros#
+ssh k8s-worker01 'sudo mkdir -p /mnt/data/redis && sudo chmod 777 /mnt/data/redis'
+ssh k8s-worker02 'sudo mkdir -p /mnt/data/redis && sudo chmod 777 /mnt/data/redis'
+```
+**¿Por qué el volumen?**  
+Falcosidekick necesita un espacio para almacenar los eventos que generan sus reglas y si no lo creamos simplemente no correra.
+Ademas es otro medio para ir generando un historial si es necesario
+### 2.2 Aplicamos el manifiesto
+```bash
+kubectl apply -f storage_manifests.yaml
+
+#Si los nodos tienen un nombre diferente debes entrar al manifiesto y editar donde se indica#
+nano storage_manifests.yaml
 ```
 
 **Output esperado**:
 ```
-NAME          STATUS   AGE
-default       Active   5d
-falco         Active   1m
-production    Active   1m
-staging       Active   1m
-development   Active   1m
-monitoring    Active   1m
-logging       Active   1m
-kube-system   Active   5d
+ - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker01  # ⚠️ CAMBIAR por tu nombre de nodo
+```
+
+**Output esperado**:
+```
+storageclass.storage.k8s.io/local-storage changed
+persistentvolume/redis-pv-worker01 changed
+persistentvolume/redis-pv-worker02 changed
+
 ```
 
 ---
@@ -247,44 +227,216 @@ Hang tight while we grab the latest from your chart repositories...
 **¿Qué hace `helm repo add`?**  
 Registra el repositorio de Helm de Falcosecurity en tu sistema local. Los repositorios de Helm son como "package managers" que contienen charts (paquetes) de aplicaciones.
 
-### 3.2 Crear Archivo de Configuración
+### 3.2 Crear Archivo de Configuración o aplicar el ya descargado
 
 ```bash
+#solo si no lo tienes descargado
 # Crear archivo de valores personalizados
-cat > /tmp/falco-values.yaml <<'EOF'
-# Configuración de Falco
-
-# Driver eBPF moderno (sin módulos de kernel)
+cat > falco-values.yaml <<'EOF'
+# Driver configuration
 driver:
   kind: modern_ebpf
-  
-# Habilitar output TTY para mejor legibilidad
-tty: true
 
-# Configuración de red
-daemonset:
-  hostNetwork: true
-
-# Habilitar Falcosidekick
-falcosidekick:
-  enabled: true
-  fullfqdn: falcosidekick.falco.svc.cluster.local
-
-# Configuración de gRPC para envío de eventos
+# JSON output
 falco:
+  jsonOutput: true
   grpc:
     enabled: true
-  grpc_output:
+  grpcOutput:
     enabled: true
 
-# Recursos (ajustar según necesidad)
-resources:
-  requests:
-    cpu: 100m
-    memory: 512Mi
-  limits:
-    cpu: 1000m
-    memory: 1024Mi
+# Falcosidekick configuration
+falcosidekick:
+  enabled: true
+  
+  config:
+    slack:
+      webhookurl: "https://hooks.slack.com/services/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"
+      minimumpriority: "warning"
+      outputformat: "all"
+  
+  webui:
+    enabled: true
+    redis:
+      enabled: true
+      master:
+        persistence:
+          enabled: true
+          size: 8Gi
+
+# CUSTOM RULES - Corregidas para Falco 0.42.0
+customRules:
+  custom-rules.yaml: |-
+    # 1. Detectar shells spawneados en containers
+    - rule: Spawned shell in container
+      desc: Detecta ejecución de shells dentro de contenedores
+      condition: evt.type=execve and container.id != host and proc.name in (sh, bash, ash, zsh)
+      output: "SHELL SPAWNED in container (user=%user.name cmd=%proc.cmdline container=%container.id)"
+      priority: WARNING
+      tags: [custom, container, shell]
+
+    # 2. Alertar escrituras en /etc
+    - rule: Write to Sensitive System Directories
+      desc: Detecta escrituras en directorios críticos (/etc, /bin, /usr/bin) ignorando archivos de cache, logs, runtime y otros conocidos
+      condition: >
+        evt.type in (open, creat, openat, pwrite, write)
+        and evt.is_open_write=true
+        and (
+          fd.name startswith /etc or
+          fd.name startswith /bin or
+          fd.name startswith /usr/bin
+        )
+        and not fd.name in (
+          /etc/ld.so.cache,
+          /etc/machine-id,
+          /etc/hosts,
+          /etc/resolv.conf,
+          /etc/passwd,
+          /etc/group,
+          /etc/shadow
+        )
+        and not fd.name startswith /etc/ssl/certs
+        and not fd.name startswith /etc/service/
+        and not fd.name startswith /etc/sv/
+        and not fd.name startswith /etc/systemd/
+        and not fd.name startswith /var/cache/
+        and not fd.name startswith /var/lib/
+        and not fd.name startswith /usr/bin/.wh
+      output: "ALERTA: Escritura en directorio sensible detectada (user=%user.name pid=%proc.pid file=%fd.name)"
+      priority: WARNING
+      tags: [filesystem, security, sensitive]
+      
+      
+    # 3. Detectar lectura de /etc/shadow
+    - rule: Read Sensitive Files (Filtered)
+      desc: Detecta lecturas de archivos sensibles como /etc/shadow solo por procesos inesperados
+      condition: >
+        evt.type in (open, openat, read)
+        and fd.name in (/etc/shadow, /etc/gshadow)
+        and evt.is_open_read=true
+        and not user.uid in (0, 1, 65534)
+        and not proc.name in (sshd, systemd, login, getent)
+      output: "ALERTA: Lectura sospechosa de archivo sensible detectada (user=%user.name pid=%proc.pid proc=%proc.name file=%fd.name)"
+      priority: CRITICAL
+      tags: [filesystem, security, sensitive]
+          
+      
+    # 4. Alertar Conexion sospechosa
+    - rule: Custom Suspicious Network Connection
+      desc: Mi detección de conexiones de red sospechosas
+      condition: >
+        outbound and
+        container and
+        fd.l4proto=tcp and
+        not fd.sport in (80, 443, 8080, 8443, 53, 3306, 5432, 6379, 9200, 27017) and
+        not proc.name in (curl, wget, apt, apt-get, yum, dnf, npm, pip, gem, go) and
+        not container.name in (calico-node, kube-proxy, coredns) and
+        user.uid > 0
+      output: >
+        [CUSTOM] Outbound connection to non-standard port (user=%user.name 
+        container=%container.name image=%container.image.repository 
+        process=%proc.name cmdline=%proc.cmdline connection=%fd.name 
+        k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name)
+      priority: WARNING
+      tags: [network, mitre_command_and_control, T1071, custom]
+
+    # 5. Detectar escalación de privilegios mediante sudo o su
+    - rule: Privilege escalation
+      desc: Detecta escalación de privilegios mediante uso de sudo o su
+      condition: evt.type=execve and proc.name in (sudo, su)
+      output: "ESCALACION DE PRIVILEGIOS (user=%user.name cmd=%proc.cmdline)"
+      priority: CRITICAL
+      tags: [custom, privilege]
+      output: "ESCALACION DE PRIVILEGIOS (user=%user.name cmd=%proc.cmdline)"
+      priority: CRITICAL
+      tags: [custom, privilege]
+
+    # 6. Alertar cambios en binarios críticos (/usr/sbin, /sbin)
+    - rule: System Binary Modified (Filtered)
+      desc: Detecta cambios en binarios del sistema ignorando actualizaciones legítimas
+      condition: >
+        evt.type in (open, creat, rename, unlink)
+        and (fd.name startswith /bin or
+             fd.name startswith /sbin or
+             fd.name startswith /usr/bin or
+             fd.name startswith /usr/sbin)
+        and not proc.name in (rpm, dpkg, yum, dnf, apt, apt-get, zypper)
+      output: "ALERTA: Cambio sospechoso en binario del sistema (user=%user.name pid=%proc.pid proc=%proc.name file=%fd.name)"
+      priority: CRITICAL
+      tags: [filesystem, integrity, custom]
+  
+  
+      # 7. Detectar Capabilities
+    - rule: Capabilities Sensibles Agregadas
+      desc: Detecta cuando se agregan capabilities sensibles a contenedores
+      condition: spawned_process and container and proc.name in (capsh, setcap, getcap) and not proc.pname in (dockerd, containerd)
+      output: Modificación de capabilities detectada (container=%container.name process=%proc.name command=%proc.cmdline)
+      priority: WARNING
+      tags: [container, capabilities]
+
+    # 8. Alertar Acceso a Secrets
+    - rule: Acceso a Secrets de Kubernetes
+      desc: Detecta cuando un proceso accede a archivos de secrets montados en contenedores
+      condition: open_read and container and fd.name startswith /run/secrets/kubernetes.io and not proc.name in (kubelet, dockerd, containerd)
+      output: Acceso a secret de Kubernetes detectado (container=%container.name image=%container.image.repository process=%proc.name file=%fd.name command=%proc.cmdline)
+      priority: WARNING
+      tags: [container, secrets, kubernetes]
+
+    # 9. Detectar descarga de archivos con wget/curl
+    - rule: Descarga de Archivos en Contenedor
+      desc: Detecta uso de wget o curl para descargar archivos
+      condition: evt.type=execve and container and proc.name in (wget, curl)
+      output: "DESCARGA DETECTADA (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, network, download]
+    
+    # 10. Detectar creación de usuarios
+    - rule: Creacion de Usuario en Contenedor
+      desc: Detecta intentos de crear nuevos usuarios
+      condition: evt.type=execve and container and proc.name in (useradd, adduser)
+      output: "CREACION DE USUARIO (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, users, persistence]
+    
+    # 11. Detectar cambios de contraseña
+    - rule: Cambio de Password en Contenedor
+      desc: Detecta intentos de cambiar contraseñas
+      condition: evt.type=execve and container and proc.name in (passwd, chpasswd)
+      output: "CAMBIO DE PASSWORD (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, users, credentials]
+    
+    # 12. Detectar escaneo de puertos
+    - rule: Escaneo de Puertos Detectado
+      desc: Detecta herramientas de escaneo de puertos
+      condition: evt.type=execve and container and proc.name in (nmap, masscan, nc, netcat, ncat)
+      output: "ESCANEO DE PUERTOS (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, network, scanning]
+    
+    # 13. Detectar compilación de código
+    - rule: Compilacion de Codigo en Contenedor
+      desc: Detecta compiladores ejecutándose en contenedores
+      condition: evt.type=execve and container and proc.name in (gcc, g++, cc, make, cmake)
+      output: "COMPILADOR DETECTADO (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: INFO
+      tags: [custom, compilation, development]
+    
+    # 14. Detectar instalación de paquetes
+    - rule: Instalacion de Paquetes en Runtime
+      desc: Detecta gestores de paquetes instalando software
+      condition: evt.type=execve and container and proc.name in (apt-get, yum, apk, dnf, pip, npm)
+      output: "INSTALACION DE PAQUETES (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, package, runtime]
+    
+    # 15. Detectar creación de cron jobs
+    - rule: Creacion de Cron Job en Contenedor
+      desc: Detecta creación o modificación de tareas programadas
+      condition: evt.type=execve and container and proc.name in (crontab, at)
+      output: "CRON JOB DETECTADO (container=%container.name process=%proc.name cmd=%proc.cmdline)"
+      priority: WARNING
+      tags: [custom, persistence, cron]
 EOF
 ```
 
@@ -297,15 +449,16 @@ EOF
 | `hostNetwork` | `true` | Necesario para que Falco pueda monitorear el tráfico de red del host |
 | `falcosidekick.enabled` | `true` | Integración automática con Falcosidekick |
 | `grpc.enabled` | `true` | Protocolo eficiente para enviar eventos a Falcosidekick |
+| `customRules` |  | Agregar reglas independientes a las que falco trae cargadas por default |
+| `webhookurl` |  | Es la parte donde se colocara el WeebHook generado de Slack |
 
-### 3.3 Instalar Falco
+### 3.3 Instalar Falco + Falcosidekick + CustomRules
 
 ```bash
-# Instalar con el archivo de valores
+# Instalar con el archivo de valores descargado o generado
 helm install falco falcosecurity/falco \
-  --namespace falco \
-  --values /tmp/falco-values.yaml \
-  --wait
+  -n falco \
+  -f falco-values.yaml
 ```
 
 **Output esperado**:
@@ -318,29 +471,37 @@ REVISION: 1
 TEST SUITE: None
 ```
 
-**¿Qué hace `--wait`?**  
-Espera a que todos los pods estén en estado Running antes de devolver el control. Esto es útil para scripts automatizados.
+**¿Qué hace `-n y -f `?**  
+-n sirve para crear un namespace y -f es para forzar a que se instale con los valores del manifiesto
 
-**⏱️ Duración**: 3-5 minutos (descargando imágenes)
+**⏱️ Duración**: 3-5 minutos
 
 ### 3.4 Verificar Despliegue de Falco
 
 ```bash
 # Ver pods de Falco (debe haber uno por nodo)
-kubectl get pods -n falco -l app.kubernetes.io/name=falco
+kubectl get pods -n falco
 ```
 
 **Output esperado**:
 ```
-NAME          READY   STATUS    RESTARTS   AGE
-falco-xxxxx   2/2     Running   0          2m
-falco-yyyyy   2/2     Running   0          2m
-falco-zzzzz   2/2     Running   0          2m
+NAME                                      READY   STATUS        RESTARTS      AGE
+falco-falcosidekick-b84c95f6d-5tfcf       1/1     Running       0             29h
+falco-falcosidekick-b84c95f6d-9trlc       1/1     Running       0             29h
+falco-falcosidekick-b84c95f6d-qgl2s       1/1     Running       0             18m
+falco-falcosidekick-b84c95f6d-s4mqs       1/1     Running       0             18m
+falco-falcosidekick-ui-77ddb87b6d-74kqd   1/1     Running       0             18m
+falco-falcosidekick-ui-77ddb87b6d-rmftp   1/1     Running       0             34h
+falco-falcosidekick-ui-77ddb87b6d-vk622   1/1     Running       0             34h
+falco-falcosidekick-ui-77ddb87b6d-xftxt   1/1     Running       0             18m
+falco-falcosidekick-ui-redis-0            1/1     Running       0             34h
+falco-mkznd                               2/2     Running       0             29h
+falco-nhmw5                               2/2     Running       0             29h
+falco-xv5d5                               2/2     Running       0             29h
+
 ```
 
-**¿Por qué 2/2 containers?**  
-- Container 1: `falco` - El motor de detección
-- Container 2: `falco-driver-loader` - Init container que carga el driver eBPF
+
 
 ```bash
 # Ver DaemonSet (debe mostrar DESIRED = CURRENT = READY)
@@ -379,84 +540,22 @@ Tue Nov 04 10:02:16 2024: Starting internal webserver, listening on port 8765
 
 ---
 
-## 4. Instalación de Falcosidekick
-
-**⏱️ Tiempo**: 3-4 minutos
-
-### 4.1 Instalar Falcosidekick con UI
-
-```bash
-# Instalar con Web UI y Redis habilitados
-helm install falcosidekick falcosecurity/falcosidekick \
-  --namespace falco \
-  --set webui.enabled=true \
-  --set redis.enabled=true \
-  --set redis.master.persistence.enabled=false \
-  --wait
-```
-
-**Explicación de parámetros**:
-- `webui.enabled=true` → Activa el dashboard web
-- `redis.enabled=true` → Habilita almacenamiento de eventos
-- `redis.master.persistence.enabled=false` → Sin persistencia (para simplificar, usa emptyDir)
-
-**Output esperado**:
-```
-NAME: falcosidekick
-LAST DEPLOYED: Mon Nov 04 10:05:00 2024
-NAMESPACE: falco
-STATUS: deployed
-```
-
-### 4.2 Verificar Falcosidekick
-
-```bash
-# Ver todos los pods relacionados
-kubectl get pods -n falco
-```
-
-**Output esperado completo**:
-```
-NAME                                READY   STATUS    AGE
-falco-xxxxx                         2/2     Running   5m
-falco-yyyyy                         2/2     Running   5m
-falco-zzzzz                         2/2     Running   5m
-falcosidekick-6c4c78d898-26n28      1/1     Running   2m
-falcosidekick-6c4c78d898-sg6pn      1/1     Running   2m
-falcosidekick-ui-5d857f45cf-btmv9   1/1     Running   2m
-falcosidekick-ui-5d857f45cf-mvqmc   1/1     Running   2m
-falcosidekick-ui-redis-0            1/1     Running   2m
-```
-
-**¿Qué hace cada componente?**
-- `falco-*`: Agentes de detección (uno por nodo)
-- `falcosidekick-*`: Routers de eventos (2 réplicas para HA)
-- `falcosidekick-ui-*`: Dashboard web (2 réplicas)
-- `falcosidekick-ui-redis-0`: Storage de eventos (StatefulSet)
-
-### 4.3 Exponer Dashboard UI
+### 4. Exponer Dashboard UI
 
 ```bash
 # Crear NodePort para acceso externo
-kubectl expose service falcosidekick-ui \
-  --type=NodePort \
-  --name=falcosidekick-ui-nodeport \
-  --port=2802 \
-  -n falco
 
-# Obtener puerto asignado
-NODEPORT=$(kubectl get svc falcosidekick-ui-nodeport -n falco -o jsonpath='{.spec.ports[0].nodePort}')
-echo "Dashboard disponible en: http://<NODE-IP>:$NODEPORT"
+kubectl port-forward -n falco svc/falco-falcosidekick-ui 2802:2802 --address=0.0.0.0
+
 ```
 
 **Output esperado**:
 ```
-service/falcosidekick-ui-nodeport exposed
-Dashboard disponible en: http://<NODE-IP>:32156
+Forwarding from 0.0.0.0:2802 -> 2802
 ```
 
 **¿Cómo acceder?**  
-Reemplaza `<NODE-IP>` con la IP de cualquier nodo de tu cluster y accede desde tu navegador.
+Reemplaza `<NODE-IP>:<NODE-PORT>` con la IP de cualquier nodo de tu cluster y el puerto en tu navegador.
 
 ---
 
@@ -464,34 +563,30 @@ Reemplaza `<NODE-IP>` con la IP de cualquier nodo de tu cluster y accede desde t
 
 **⏱️ Tiempo**: 2 minutos
 
-### 5.1 Aplicar ConfigMap de Reglas
+### 5.1 Aplicar nuevas reglas
 
 ```bash
-# Aplicar reglas desde manifests
-kubectl apply -f manifests/falco/custom-rules-configmap.yaml
+# Editar el manifiesto con la nueva regla
+nano falco-values.yaml
 ```
 
-**Output esperado**:
-```
-configmap/falco-custom-rules configured
-```
-
-**¿Qué contiene este ConfigMap?**  
-Las 15+ reglas personalizadas que detectan:
-- Shells no autorizados
-- Acceso a archivos sensibles
-- Escalación de privilegios
-- Reverse shells
-- Y más...
+**¿Porque de esta manera?**  
+Al momento de instalar falco nosotros le dimos reglas ya pre-cargadas las cuales ejecuta desde su instalacion y
+si se quiere agregar mas solo debemos modificar el manifiesto y asi aseguramos la integridad de las configuraciones.
 
 ### 5.2 Reiniciar Falco para Cargar Reglas
 
 ```bash
+#Actualizar Reglas
+helm upgrade falco falcosecurity/falco \
+  -n falco \
+  -f falco-values.yaml
+
 # Reiniciar DaemonSet
 kubectl rollout restart daemonset/falco -n falco
 
 # Esperar a que se complete
-kubectl rollout status daemonset/falco -n falco --timeout=120s
+
 ```
 
 **Output esperado**:
@@ -504,63 +599,115 @@ daemon set "falco" successfully rolled out
 
 **⏱️ Duración**: 30-60 segundos
 
-### 5.3 Verificar Reglas Cargadas
+---
+
+## 6. Integracion con Slack
+
+**⏱️ Tiempo**: 1 minuto  
+**Nota**: Ya debes tener el Weebhoock de tu aplicacion de no tenerlos ve a la documentacion de configuracion o lee el README.md
+
+### 6.1 Editar el manifiesto
 
 ```bash
-# Ver logs para confirmar carga de reglas
-kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=50 | grep -i "loaded\|rule"
+#Editar el falco-values.yaml en la seccion del webhook
+nano falco-values.yaml
+
+#Aplicar los cambios como en el paso anterior
+helm upgrade falco falcosecurity/falco \
+  -n falco \
+  -f falco-values.yaml
 ```
 
+**¿Para qué sirve el weebhook?**  
+Un webhook es una forma de comunicación automática entre aplicaciones.
+Permite que una aplicación envíe información a otra en tiempo real, sin que la segunda tenga que pedirla.
+
+---
+
+## 7. Creacion de Network Policies
+
+**⏱️ Tiempo**: 5 minuto  
+**Nota**: Se agrego un manifiesto con una arquitectura de ejemplo (se puede modificar de acuerdo a las necesidades)
+
+### 7.1 Crear y etiquetar namespace
+```bash
+kubectl create namespace production
+kubectl label namespace production name=production
+```
+### 7.2 Aplicar el manifiesto 
+
+```bash
+kubectl apply -f netpol_default_deny.yaml
+```
+
+**¿Para qué las network policies?**  
+Permiten definir quién puede comunicarse con quién (Ingress) y a dónde pueden salir los pods (Egress), mejorando la seguridad y aislamiento dentro del clúster.
+
+---
+## 8. Verificacion post-instalacion
+
+**⏱️ Tiempo**: 2-3 minutos  
+
+### 8.1 Verificar CustomRules
+
+```bash
+#En el navegador se deben de observar los eventos al igual que en Slack
+```
+
+### 8.2 Verificar NetworkPolicies
+
+```bash
+#Dar permisos de ejecucion y ejecutar
+chmod +x netpol_quick_test.sh
+./netpol_quick_test.sh
+```
 **Output esperado**:
 ```
-Loading rules from: /etc/falco/falco_rules.yaml
-Loading rules from: /etc/falco/rules.d/custom-rules.yaml
-Loaded 15 custom rules
+🧪 TEST 1: Frontend → Backend:8080 (debe estar PERMITIDO)
+Comando: kubectl exec test-frontend -n production -- timeout 5 wget -qO- 10.244.69.211:8080
+✅ Conexión permitida o respondió (correcto)
+
+🧪 TEST 2: Frontend → Database:5432 (debe estar BLOQUEADO)
+Comando: kubectl exec test-frontend -n production -- timeout 5 wget -qO- 10.244.79.85:5432
+✅ Conexión BLOQUEADA (correcto - Policy funcionando)
+
+🧪 TEST 3: Backend → Database:5432 (debe estar PERMITIDO)
+Comando: kubectl exec test-backend -n production -- timeout 5 nc -zv 10.244.79.85 5432
+✅ Conexión permitida o respondió (correcto)
+
+🧪 TEST 4: Backend → Internet:443 (debe estar PERMITIDO)
+Comando: kubectl exec test-backend -n production -- timeout 5 nc -zv 8.8.8.8
+✅ Conexión permitida o respondió (correcto)
+
+🧪 TEST 5: Database -> Backend (debe estar BLOQUEADO)
+Comando: kubectl exec test-database -n production -- timeout 5 wget -qO- 10.244.69.211:8080
+✅ Conexión BLOQUEADA (correcto - Policy funcionando)
+
+🧪 TEST 6: Database -> Frontend (debe estar BLOQUEADO)
+kubectl exec test-database -n production -- timeout 5 wget -qO- 10.244.79.84:80
+✅ Conexión BLOQUEADA (correcto - Policy funcionando)
+
+🧪 TEST 7: Unauthorized → Backend:8080 (debe estar BLOQUEADO - Default Deny)
+Comando: kubectl exec test-unauthorized -n production -- timeout 5 nc -zv 10.244.69.211 8080
+✅ Conexión BLOQUEADA (correcto - Default Deny funcionando)
+
+🧪 TEST 8: Unauthorized → FRONTEND:80 (debe estar BLOQUEADO - Default Deny)
+Comando: kubectl exec test-unauthorized -n production -- timeout 5 nc -zv 10.244.79.84 80
+✅ Conexión BLOQUEADA (correcto - Default Deny funcionando)
+
+🧪 TEST 9: DNS Resolution (todos los pods deben resolver 'kubernetes.default')
+Probando resolucion DNS desde pod/test-backend ...
+✅ DNS funciona desde pod/test-backend
+
+Probando resolucion DNS desde pod/test-database ...
+✅ DNS funciona desde pod/test-database
+
+Probando resolucion DNS desde pod/test-frontend ...
+✅ DNS funciona desde pod/test-frontend
+
+Probando resolucion DNS desde pod/test-unauthorized ...
+✅ DNS funciona desde pod/test-unauthorized
 ```
 
 ---
-
-## 6. Configuración de Storage (Opcional pero Recomendado)
-
-**⏱️ Tiempo**: 5 minutos  
-**Nota**: Solo si quieres persistencia de eventos
-
-### 6.1 Crear StorageClass y PV
-
-```bash
-# Aplicar configuración de storage
-kubectl apply -f - <<EOF
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: local-storage
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: redis-pv
-spec:
-  capacity:
-    storage: 8Gi
-  accessModes:
-  - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-storage
-  hostPath:
-    path: /mnt/data/redis
-    type: DirectoryOrCreate
-EOF
-```
-
-**¿Para qué sirve?**  
-Permite que Redis persista los eventos incluso si el pod se reinicia. Útil para análisis histórico.
-
-**Continúa en la siguiente sección...**
-
----
-
-**Total de palabras**: ~2,100 ✅  
-**Screenshots recomendados**: 12 capturas en puntos clave ✅
 
