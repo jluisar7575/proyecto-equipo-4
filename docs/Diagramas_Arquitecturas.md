@@ -74,6 +74,7 @@ graph TB
 
 ### Matriz de Conectividad
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "14px"}, "flowchart": {"rankSpacing": 70, "nodeSpacing": 50}}}%%
 
 graph TB
     subgraph Matrix["🔐 MATRIZ DE CONECTIVIDAD DE RED"]
